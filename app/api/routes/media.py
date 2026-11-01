@@ -21,5 +21,14 @@ async def serve_media(
     except StorageError as exc:
         raise HTTPException(status_code=404, detail=exc.message) from exc
 
-    media_type = "video/mp4" if path.suffix.lower() == ".mp4" else "video/quicktime"
+    suffix = path.suffix.lower()
+    media_types = {
+        ".mp4": "video/mp4",
+        ".mov": "video/quicktime",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".json": "application/json",
+    }
+    media_type = media_types.get(suffix, "application/octet-stream")
     return FileResponse(path, media_type=media_type, filename=path.name)

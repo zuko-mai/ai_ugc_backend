@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI UGC Creator — Demo</title>
+  <style>
+    :root {
+      --bg: #12141a;
+      --panel: #1c2030;
+      --line: #2d3348;
+      --text: #eef1f8;
+      --muted: #9aa3b8;
+      --accent: #3d8bfd;
+      --ok: #3ecf8e;
+      --warn: #f0b429;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(1200px 600px at 10% -10%, #243055 0%, transparent 55%),
+        radial-gradient(900px 500px at 100% 0%, #1a2a24 0%, transparent 45%),
+        var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    main {
+      width: 100%;
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 28px 18px 64px;
+      min-width: 0;
+    }
+    h1 { font-size: 1.6rem; margin: 0 0 6px; letter-spacing: -0.02em; }
+    .sub { color: var(--muted); margin-bottom: 22px; }
+    .session {
+      display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+      margin-bottom: 18px; color: var(--muted); font-size: 0.92rem;
+      min-width: 0;
+    }
+    #sessionLabel {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      min-width: 0;
+    }
+    .steps {
+      display: grid; gap: 14px;
+      min-width: 0;
+      max-width: 100%;
+    }
+    section {
+      position: relative;
+      background: color-mix(in srgb, var(--panel) 92%, black);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px 16px 28px;
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+    }
+    .ai-cost {
+      position: absolute;
+      right: 12px;
+      bottom: 8px;
+      color: #f08a2e;
+      font-size: 0.74rem;
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      line-height: 1.3;
+      max-width: 70%;
+      pointer-events: none;
+    }
+    .ai-cost .rerun { opacity: 0.9; }
+    .ai-cost .sum { font-weight: 600; }
+    section h2 {
+      margin: 0 0 10px;
+      font-size: 1.02rem;
+      font-weight: 600;
+    }
+    .hint {
+      margin: -4px 0 10px;
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+    .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 8px 0; }
+    label { font-size: 0.86rem; color: var(--muted); display: block; margin-bottom: 4px; }
+    input[type="text"], input[type="number"], textarea, select {
+      width: 100%;
+      max-width: 100%;
+      background: #0f121a;
+      border: 1px solid var(--line);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font: inherit;
+    }
+    textarea {
+      min-height: 72px;
+      max-height: 220px;
+      resize: vertical;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    button {
+      background: var(--accent);
+      color: white;
+      border: 0;
+      border-radius: 8px;
+      padding: 9px 14px;
+      font: inherit;
+      cursor: pointer;
+    }
+    button.secondary { background: #2a3146; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .candidates {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .candidate {
+      border: 2px solid transparent;
+      border-radius: 10px;
+      overflow: hidden;
+      cursor: pointer;
+      background: #0f121a;
+    }
+    .candidate.selected { border-color: var(--ok); }
+    .candidate img { width: 100%; display: block; aspect-ratio: 9/16; object-fit: cover; }
+    .candidate span { display: block; padding: 6px 8px; font-size: 0.78rem; color: var(--muted); }
+    pre {
+      background: #0b0d13;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      overflow: auto;
+      max-width: 100%;
+      max-height: 280px;
+      font-size: 0.78rem;
+      color: #c9d2e8;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .status { color: var(--warn); font-size: 0.88rem; min-height: 1.2em; }
+    video, img.preview {
+      max-width: 220px;
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      margin-top: 8px;
+      background: #0b0d13;
+    }
+    #sourceVideo {
+      max-width: 280px;
+      aspect-ratio: 9 / 16;
+      object-fit: contain;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>AI UGC Creator — Demo UI</h1>
+  <p class="sub">Локальный wizard поверх `/v1/pipeline` и `/v1/assets`. Для полного UI позже будет отдельный фронт.</p>
+
+  <div class="session">
+    <button id="btnCreate">Создать session</button>
+    <span id="sessionLabel">session: —</span>
+    <button class="secondary" id="btnRefresh">Обновить state</button>
+  </div>
+  <p class="status" id="status"></p>
+
+  <div class="steps">
+    <section>
+      <h2>0. Product description</h2>
+      <label>Описание продукта</label>
+      <textarea id="productDescription">Saya is a pregnancy companion app for iOS and Android that helps expectant parents follow the journey week by week. It calculates gestational age and due date from common methods (LMP, conception date, ultrasound week, or estimated birth date) and shows weekly progress for baby, mom, nutrition, and tips. Users can track calendar events such as mood, medications, appointments, and notes, plus baby-care activities like sleep, diapers, breastfeeding, kicks, and contractions. The app includes expert articles, helper tools, baby-size and growth trackers, stories, and localized content in English, Russian, and Kazakh. Partners can link accounts to share pregnancy data and presence. An AI assistant answers pregnancy-related questions within a usage quota, and Premium unlocks extra features via App Store subscriptions. Content is informational only and is not a substitute for medical advice.</textarea>
+      <div class="row">
+        <div style="flex:1;min-width:160px">
+          <label>Name</label>
+          <input id="productName" type="text" value="Saya" />
+        </div>
+        <div style="flex:1;min-width:160px">
+          <label>Audience</label>
+          <input id="productAudience" type="text" value="expectant parents" />
+        </div>
+        <div style="width:100px">
+          <label>Lang</label>
+          <input id="productLang" type="text" value="en" />
+        </div>
+      </div>
+      <button id="btnProduct">Сохранить продукт</button>
+    </section>
+
+    <section>
+      <h2>1. Video ingestion</h2>
+      <div class="row">
+        <input id="videoFile" type="file" accept="video/mp4,video/quicktime" />
+        <button id="btnUploadVideo">Upload MP4/MOV</button>
+      </div>
+      <div class="row">
+        <input id="videoUrl" type="text" placeholder="Direct MP4 / Instagram Reel / TikTok URL" style="flex:1" />
+        <button id="btnUrlVideo">Ingest URL</button>
+      </div>
+      <video id="sourceVideo" controls playsinline hidden></video>
+    </section>
+
+    <section id="block-hook">
+      <h2>2. Hook candidates + select</h2>
+      <button id="btnCandidates">Получить кадры</button>
+      <div class="candidates" id="candidates"></div>
+      <div class="row">
+        <button id="btnSelectFrame" disabled>Выбрать кадр + motionPrompt</button>
+      </div>
+      <label>motionPrompt</label>
+      <textarea id="motionPrompt" readonly placeholder="появится после выбора кадра"></textarea>
+      <div class="ai-cost" id="cost-hook"></div>
+    </section>
+
+    <section id="block-face">
+      <h2>3. Face replacement</h2>
+      <div class="row">
+        <input id="faceFile" type="file" accept="image/*" />
+        <button id="btnFace">Generate face</button>
+      </div>
+      <label>Доп. промпт (optional)</label>
+      <textarea id="facePrompt" placeholder="slightly softer lighting..."></textarea>
+      <img class="preview" id="facePreview" alt="" hidden />
+      <div class="ai-cost" id="cost-face"></div>
+    </section>
+
+    <section id="block-hook-video">
+      <h2>4. Hook video</h2>
+      <label>Промпт (можно править)</label>
+      <textarea id="hookPrompt"></textarea>
+      <div class="row">
+        <button id="btnHookVideo">Generate</button>
+        <button class="secondary" id="btnHookRefresh">Refresh job</button>
+      </div>
+      <video id="hookVideo" controls hidden></video>
+      <div class="ai-cost" id="cost-hook-video"></div>
+    </section>
+
+    <section id="block-hook-text">
+      <h2>5. Hook text</h2>
+      <p class="hint">Один AI-запрос по клипу: OCR + ASR + варианты под продукт</p>
+      <button id="btnExtractAdapt">Extract + adapt</button>
+      <div id="variants"></div>
+      <label>Или свой текст</label>
+      <textarea id="manualHookText"></textarea>
+      <button id="btnSelectText">Select text</button>
+      <div class="ai-cost" id="cost-hook-text"></div>
+    </section>
+
+    <section>
+      <h2>6. Text renderer</h2>
+      <button id="btnRender">Burn text onto hook video</button>
+      <video id="renderVideo" controls hidden></video>
+    </section>
+
+    <section>
+      <h2>7. Product demo composer</h2>
+      <input id="demoFile" type="file" accept="video/mp4,video/quicktime" />
+      <button id="btnCompose">Compose</button>
+      <button class="secondary" id="btnComposeRefresh">Refresh</button>
+      <video id="composeVideo" controls hidden></video>
+    </section>
+
+    <section>
+      <h2>8. Music overlay</h2>
+      <input id="musicFile" type="file" accept="audio/*,.mp3,.wav,.m4a" />
+      <div class="row">
+        <div>
+          <label for="musicStartOffset">Музыка с секунды (в файле)</label>
+          <input id="musicStartOffset" type="number" min="0" step="0.1" value="0" />
+        </div>
+        <div>
+          <label for="videoMusicStart">На видео с секунды</label>
+          <input id="videoMusicStart" type="number" min="0" step="0.1" value="0" />
+        </div>
+        <div>
+          <label for="musicVolume">Громкость (0–1)</label>
+          <input id="musicVolume" type="number" min="0" max="1" step="0.05" value="0.3" />
+        </div>
+      </div>
+      <button id="btnMusic">Overlay music</button>
+      <button class="secondary" id="btnMusicRefresh">Refresh</button>
+      <video id="finalVideo" controls hidden></video>
+    </section>
+
+    <section>
+      <h2>Session JSON</h2>
+      <pre id="state">{}</pre>
+    </section>
+  </div>
+</main>
+<script>
+  let sessionId = null;
+  let selectedFrameId = null;
+  let selectedVariantId = null;
+
+  const $ = (id) => document.getElementById(id);
+  const status = (msg) => { $("status").textContent = msg || ""; };
+
+  async function api(path, options = {}) {
+    const res = await fetch(path, options);
+    const text = await res.text();
+    let data;
+    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+    if (!res.ok) {
+      const detail = data && (data.message || data.detail || data.error_code);
+      throw new Error(detail || res.statusText || `HTTP ${res.status}`);
+    }
+    return data;
+  }
+
+  function setBusy(btn, busy, label) {
+    if (!btn) return;
+    if (busy) {
+      btn.dataset.prevLabel = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = label || "Working…";
+    } else {
+      btn.disabled = false;
+      if (btn.dataset.prevLabel) btn.textContent = btn.dataset.prevLabel;
+    }
+  }
+
+  function fmtUsd(v) {
+    if (v == null || Number.isNaN(Number(v))) return "n/a";
+    const n = Number(v);
+    if (n === 0) return "$0";
+    if (n < 0.0001) return `$${n.toExponential(1)}`;
+    if (n < 0.01) return `$${n.toFixed(4)}`;
+    return `$${n.toFixed(3)}`;
+  }
+
+  function renderAiCost(elId, runs) {
+    const el = $(elId);
+    if (!el) return;
+    if (!runs || !runs.length) {
+      el.innerHTML = "";
+      return;
+    }
+    const lines = runs.map((r, i) => {
+      const tag = r.is_rerun ? `<span class="rerun">rerun${i}</span>` : `#${i + 1}`;
+      return `${tag} ${fmtUsd(r.cost_usd)}`;
+    });
+    const known = runs.map((r) => r.cost_usd).filter((v) => v != null && !Number.isNaN(Number(v)));
+    if (known.length) {
+      const sum = known.reduce((a, b) => a + Number(b), 0);
+      lines.push(`<span class="sum">Σ ${fmtUsd(sum)}</span>`);
+    } else if (runs.some((r) => r.is_rerun)) {
+      lines.push(`<span class="sum">rerun ×${runs.filter((r) => r.is_rerun).length}</span>`);
+    }
+    el.innerHTML = lines.join("<br>");
+  }
+
+  function showSession(s) {
+    $("state").textContent = JSON.stringify(s, null, 2);
+    $("sessionLabel").textContent = `session: ${s.session_id} · step ${s.step}`;
+    renderAiCost("cost-hook", s.hook_analysis?.ai_runs);
+    renderAiCost("cost-face", s.face?.ai_runs);
+    renderAiCost("cost-hook-video", s.hook_video?.ai_runs);
+    renderAiCost("cost-hook-text", s.hook_text?.ai_runs);
+    if (s.source_video?.video_url) {
+      const src = $("sourceVideo");
+      if (src.src !== s.source_video.video_url) {
+        src.src = s.source_video.video_url;
+      }
+      src.hidden = false;
+    }
+    if (s.hook_analysis) {
+      const prompt = s.hook_analysis.motion_prompt || "";
+      $("motionPrompt").value = prompt;
+      if (prompt) $("hookPrompt").value = prompt;
+    }
+    if (s.face?.generated_frame_url) {
+      $("facePreview").src = s.face.generated_frame_url;
+      $("facePreview").hidden = false;
+    }
+    if (s.hook_video?.video_url) {
+      $("hookVideo").src = s.hook_video.video_url;
+      $("hookVideo").hidden = false;
+    }
+    if (s.render?.video_url) {
+      $("renderVideo").src = s.render.video_url;
+      $("renderVideo").hidden = false;
+    }
+    if (s.composition?.video_url) {
+      $("composeVideo").src = s.composition.video_url;
+      $("composeVideo").hidden = false;
+    }
+    if (s.music?.video_url) {
+      $("finalVideo").src = s.music.video_url;
+      $("finalVideo").hidden = false;
+    }
+    if (s.hook_analysis?.candidates?.length) {
+      renderCandidates(s.hook_analysis.candidates, s.hook_analysis.selected_frame_id);
+    }
+    if (s.hook_text?.variants?.length) {
+      renderVariants(s.hook_text.variants, s.hook_text.selected_text);
+    }
+  }
+
+  function renderCandidates(items, selected) {
+    const root = $("candidates");
+    root.innerHTML = "";
+    items.forEach((c) => {
+      const div = document.createElement("div");
+      div.className = "candidate" + (String(c.frame_id) === String(selected || selectedFrameId) ? " selected" : "");
+      div.innerHTML = `<img src="${c.image_url}" alt=""><span>${c.quality_score?.toFixed?.(2) ?? ""} · ${c.timestamp_seconds}s</span>`;
+      div.onclick = () => {
+        selectedFrameId = c.frame_id;
+        [...root.children].forEach((el) => el.classList.remove("selected"));
+        div.classList.add("selected");
+        $("btnSelectFrame").disabled = false;
+        status(`Кадр выбран (${c.timestamp_seconds}s). Нажми «Выбрать кадр + motionPrompt».`);
+      };
+      root.appendChild(div);
+    });
+  }
+
+  function renderVariants(items, selectedText) {
+    const root = $("variants");
+    root.innerHTML = "";
+    items.forEach((v) => {
+      const btn = document.createElement("button");
+      btn.className = "secondary";
+      btn.style.display = "block";
+      btn.style.width = "100%";
+      btn.style.margin = "6px 0";
+      btn.style.textAlign = "left";
+      btn.textContent = v.hook_text;
+      if (selectedText && selectedText === v.hook_text) btn.style.outline = "2px solid var(--ok)";
+      btn.onclick = () => { selectedVariantId = v.variant_id; $("manualHookText").value = ""; status(`variant ${v.variant_id}`); };
+      root.appendChild(btn);
+    });
+  }
+
+  $("btnCreate").onclick = async () => {
+    try {
+      status("creating session...");
+      const s = await api("/v1/pipeline/sessions", { method: "POST" });
+      sessionId = s.session_id;
+      showSession(s);
+      status("session created");
+    } catch (e) { status(e.message); }
+  };
+
+  $("btnRefresh").onclick = async () => {
+    if (!sessionId) return status("no session");
+    try {
+      const s = await api(`/v1/pipeline/sessions/${sessionId}`);
+      showSession(s);
+      status("refreshed");
+    } catch (e) { status(e.message); }
+  };
+
+  $("btnProduct").onclick = async () => {
+    if (!sessionId) return status("create session first");
+    try {
+      const s = await api(`/v1/pipeline/sessions/${sessionId}/product`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: $("productName").value,
+          description: $("productDescription").value,
+          target_audience: $("productAudience").value,
+          language: $("productLang").value,
+        }),
+      });
+      showSession(s);
+      status("product saved");
+    } catch (e) { status(e.message); }
+  };
+
+  $("btnUploadVideo").onclick = async () => {
+    if (!sessionId) return status("create session first");
+    const file = $("videoFile").files[0];
+    if (!file) return status("choose a video file");
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      status("uploading...");
+      const s = await api(`/v1/pipeline/sessions/${sessionId}/ingest/upload`, { method: "POST", body: fd });
+      showSession(s);
+      status("video uploaded");
+    } catch (e) { status(e.message); }
+  };
+
+  $("btnUrlVideo").onclick = async () => {
+    if (!sessionId) return status("create session first");
+    try {
+      status("ingesting url...");
+      const s = await api(`/v1/pipeline/sessions/${sessionId}/ingest/url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: $("videoUrl").value }),
+      });
+      showSession(s);
+      status("video ingested");
+    } catch (e) { status(e.message); }
+  };
+
+  $("btnCandidates").onclick = async () => {
+    if (!sessionId) return status("create session first");
+    try {
+      status("analyzing candidates...");
+      const s = await api(`/v1/pipeline/sessions/${sessionId}/hook/candidates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      showSession(s);
+      status("candidates ready");
+    } catch (e) { status(e.message); }
+  };
+
+  $("btnSelectFrame").onclick = async () => {
+    if (!sessionId) return status("create session first");
+    if (!selectedFrameId) return status("сначала кликни кадр");
+    const btn = $("btnSelectFrame");
+    try {
+      setBusy(btn, true, "Gemini motionPrompt…");
+      status("создаём trimmed clip + motionPrompt (может занять 10–40с)…");
+      const s = await api(`/v1/pipeline/sessions/${sessionId}/hook/select`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ selected_frame_id: selectedFrameId, generate_motion_plan: true }),
+      });
+      showSession(s);
+      const prompt = s.hook_analysis?.motion_prompt || "";
+      $("motionPrompt").value = prompt;
+      $("hookPrompt").value = prompt;
+      if (!prompt) {
+        status("кадр сохранён, но motionPrompt пустой — проверь GOOGLE_AI_API_KEY");
+      } else {
+        status("frame selected · motionPrompt готов");
+      }
+    } catch (e) {
+      status(e.message);
+    } finally {
+      setBusy(btn, false);
+      btn.disabled = !selectedFrameId;
+    }
+  };
+
+  $("btnFace").onclick = async () => {
+    if (!sessionId) return;
+    const file = $("faceFile").files[0];
+    if (!file) return status("choose face image");
+    const fd = new FormData();
+    fd.append("face_file", file);
+    if ($("facePrompt").value) fd.append("user_prompt", $("facePrompt").value);
+    try {
+      status("face replacement...");
+      const s = await api(`/v1/pipeline/sessions/${sessionId}/face/generate`, { method: "POST", body: fd });
+      showSession(s);
+      status("face done");
+    } catch (e) { status(e.message); }
+  };
+
+  $("btnHookVideo").onclick = async () => {
+    if (!sessionId) return;
+    try {
+      status("generating hook video...");
+      const s = await api(`/v1/pipeline/sessions/${sessionId}/hook-video/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: $("hookPrompt").value || null }),
+      });
+      showSession(s);
+      status("hook video queued — press Refresh");
+    } catch (e) { status(e.message); }
+  };
+
+  $("btnHookRefresh").onclick = async () => {
+    if (!sessionId) return;
+    try {
+      const s = await api(`/v1/pipeline/sessions/${sessionId}/hook-video/refresh`, { method: "POST" });
+      showSession(s);
+      status(s.hook_video?.video_url ? "hook video ready" : "still processing");
+    } catch (e) { status(e.message); }
+  };
+
+  $("btnExtractAdapt").onclick = async () => {
+    if (!sessionId) return;
+    try {
+      status("extract + adapt...");
+      const s = await api(`/v1/pipeline/sessions/${sessionId}/hook-text/extract-adapt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      showSession(s);
+      status("variants ready");
+    } catch (e) { status(e.message); }
+  };
+
+  $("btnSelectText").onclick = async () => {
+    if (!sessionId) return;
+    const body = {};
+    if ($("manualHookText").value.trim()) body.manual_text = $("manualHookText").value.trim();
+    else if (selectedVariantId) body.variant_id = selectedVariantId;
+    else body.use_original = true;
+    try {
+      const s = await api(`/v1/pipeline/sessions/${sessionId}/hook-text/select`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      showSession(s);
+      status("text selected");
+    } catch (e) { status(e.message); }
+  };
+
+  $("btnRender").onclick = async () => {
+    if (!sessionId) return;
+    try {
+      const s = await api(`/v1/pipeline/sessions/${sessionId}/render`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      showSession(s);
+      status("text rendered");
+    } catch (e) { status(e.message); }
+  };
+
+  $("btnCompose").onclick = async () => {
+    if (!sessionId) return;
+    const file = $("demoFile").files[0];
+    if (!file) return status("choose demo video");
+    const fd = new FormData();
+    fd.append("demo_file", file);
+    try {
+      status("composing...");
+      const s = await api(`/v1/pipeline/sessions/${sessionId}/compose`, { method: "POST", body: fd });
+      showSession(s);
+      status("compose queued — refresh");
+    } catch (e) { status(e.message); }
+  };
+
+  $("btnComposeRefresh").onclick = async () => {
+    if (!sessionId) return;
+    try {
+      const s = await api(`/v1/pipeline/sessions/${sessionId}/compose/refresh`, { method: "POST" });
+      showSession(s);
+      status(s.composition?.video_url ? "compose ready" : "still processing");
+    } catch (e) { status(e.message); }
+  };
+
+  $("btnMusic").onclick = async () => {
+    if (!sessionId) return;
+    const file = $("musicFile").files[0];
+    if (!file) return status("choose music file");
+    const fd = new FormData();
+    fd.append("music_file", file);
+    fd.append("music_start_offset_seconds", String(Number($("musicStartOffset").value) || 0));
+    fd.append("video_start_seconds", String(Number($("videoMusicStart").value) || 0));
+    fd.append("music_volume", String(Number($("musicVolume").value) || 0.3));
+    try {
+      status("music overlay...");
+      const s = await api(`/v1/pipeline/sessions/${sessionId}/music`, { method: "POST", body: fd });
+      showSession(s);
+      status("music queued — refresh");
+    } catch (e) { status(e.message); }
+  };
+
+  $("btnMusicRefresh").onclick = async () => {
+    if (!sessionId) return;
+    try {
+      const s = await api(`/v1/pipeline/sessions/${sessionId}/music/refresh`, { method: "POST" });
+      showSession(s);
+      status(s.music?.video_url ? "final ready" : "still processing");
+    } catch (e) { status(e.message); }
+  };
+</script>
+</body>
+</html>

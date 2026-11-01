@@ -13,6 +13,11 @@ from app.stages.video_ingestion.exceptions import (
     VideoTooLargeError,
     VideoUnavailableError,
 )
+from app.stages.video_ingestion.social import (
+    download_social_video,
+    is_social_video_url,
+    social_platform,
+)
 from app.stages.video_ingestion.metadata import extract_metadata
 from app.stages.video_ingestion.schemas import VideoIngestionResponse
 from app.stages.video_ingestion.validation import (
@@ -67,6 +72,9 @@ class VideoIngestionService:
 
     async def ingest_url(self, url: str) -> VideoIngestionResponse:
         logger.info("Ingesting remote video url=%s", url)
+        if is_social_video_url(url):
+            return await self._ingest_social(url)
+
         extension, content_type, stream = await stream_from_url(url, self.settings)
         video_id = uuid4()
         key = self._storage_key(video_id, extension)
@@ -85,6 +93,35 @@ class VideoIngestionService:
         except Exception:
             await self._cleanup(key)
             raise
+
+    async def _ingest_social(self, url: str) -> VideoIngestionResponse:
+        platform = social_platform(url) or "social"
+        path, extension = await download_social_video(
+            url, self.settings, platform=platform
+        )
+        video_id = uuid4()
+        key = self._storage_key(video_id, extension)
+        content_type = "video/quicktime" if extension == ".mov" else "video/mp4"
+        try:
+            await self.storage.save_file(key, path, content_type=content_type)
+            return await self._finalize(video_id, key, extension)
+        except (
+            UnsupportedFormatError,
+            VideoTooLargeError,
+            VideoUnavailableError,
+            StorageError,
+        ):
+            await self._cleanup(key)
+            raise
+        except Exception:
+            await self._cleanup(key)
+            raise
+        finally:
+            try:
+                path.unlink(missing_ok=True)
+                path.parent.rmdir()
+            except OSError:
+                logger.warning("Failed to cleanup %s temp file %s", platform, path)
 
     async def _finalize(
         self,
